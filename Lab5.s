@@ -2,9 +2,8 @@
 @ Author: Aaron
 @ Email: amd0047@uah.edu
 @ Date: April 2026
-@ Purpose: Simulate a gasoline pump with three grades. Uses stack for register preservation.
-@          Handles invalid inputs properly, including non-numeric dollar amounts.
-@          Secret code: S or s
+@ Purpose: Simulate gasoline pump. Uses stack for register preservation.
+@          Fixed input handling so it no longer hangs on invalid dollar amounts (letters).
 
 @ Assemble:   as -o Lab5.o Lab5.s
 @ Link:       gcc -o Lab5 Lab5.o
@@ -35,14 +34,14 @@ final_inv:      .asciz "\nFinal inventory levels:\n"
 final_dol:      .asciz "Final dollar amounts dispensed:\n"
 newline:        .asciz "\n"
 
-@ Buffers
 grade_buf:      .space 8
 dollar_buf:     .space 16
+char_buf:       .space 4               @ For single char clear
 
 char_format:    .asciz "%s"
 int_format:     .asciz "%d"
+single_char:    .asciz "%c"
 
-@ Variables
 .align 4
 inv_reg:        .word 500
 inv_mid:        .word 500
@@ -58,7 +57,7 @@ dol_prem:       .word 0
 .extern scanf
 
 main:
-    push {r4-r11, lr}              @ Save registers on stack
+    push {r4-r11, lr}
 
     ldr r0, =welcome
     bl  printf
@@ -67,17 +66,15 @@ main:
     bl  print_dollars
 
 main_loop:
-    @ Shutdown check: all grades below 10 tenths?
+    @ Check shutdown condition
     ldr r0, =inv_reg
     ldr r1, [r0]
     cmp r1, #10
     bge get_grade
-
     ldr r0, =inv_mid
     ldr r1, [r0]
     cmp r1, #10
     bge get_grade
-
     ldr r0, =inv_prem
     ldr r1, [r0]
     cmp r1, #10
@@ -93,7 +90,6 @@ get_grade:
     ldr r1, =grade_buf
     bl  scanf
 
-    @ Secret code 'S' or 's'
     ldr r0, =grade_buf
     ldrb r1, [r0]
     cmp r1, #'S'
@@ -101,7 +97,6 @@ get_grade:
     cmp r1, #'s'
     beq show_status
 
-    @ Valid grade check
     cmp r1, #'R'
     beq sel_reg
     cmp r1, #'r'
@@ -122,7 +117,7 @@ get_grade:
 sel_reg:
     ldr r0, =selected_reg
     bl  printf
-    mov r4, #0                     @ 0 = Regular
+    mov r4, #0
     b   ask_dollar
 
 sel_mid:
@@ -137,8 +132,8 @@ sel_prem:
     mov r4, #2
     b   ask_dollar
 
-ask_dollar:                        @ Dollar input loop with proper error recovery
-    mov r5, r4                     @ r5 = current grade
+ask_dollar:
+    mov r5, r4                     @ r5 = grade
 
     bl  has_enough_for_grade
     cmp r0, #0
@@ -151,26 +146,24 @@ ask_dollar:                        @ Dollar input loop with proper error recover
     ldr r1, =dollar_buf
     bl  scanf
 
-    cmp r0, #1                     @ Successful read?
-    bne dollar_input_failed
+    cmp r0, #1
+    bne dollar_failed
 
-    ldr r6, =dollar_buf            @ Get the number
+    ldr r6, =dollar_buf
     ldr r6, [r6]
 
     cmp r6, #1
-    blt dollar_input_failed
+    blt dollar_failed
     cmp r6, #50
-    bgt dollar_input_failed
+    bgt dollar_failed
 
-    @ Calculate and check tenths
-    bl  calculate_tenths           @ r0 = tenths
-    mov r7, r0                     @ r7 = requested tenths
+    bl  calculate_tenths
+    mov r7, r0                     @ requested tenths
 
     bl  get_inventory
     cmp r0, r7
     blt fuel_insufficient
 
-    @ Dispense
     bl  subtract_from_inventory
     bl  add_to_dollars
 
@@ -182,11 +175,11 @@ ask_dollar:                        @ Dollar input loop with proper error recover
 
     b   main_loop
 
-dollar_input_failed:               @ Non-integer input (letter, etc.)
+dollar_failed:
     ldr r0, =invalid_dollar
     bl  printf
-    bl  clear_input_buffer
-    b   ask_dollar                 @ Try again for same grade
+    bl  clear_input_buffer         @ Safe clear - this was the hang source
+    b   ask_dollar
 
 fuel_insufficient:
     ldr r0, =insufficient
@@ -217,56 +210,48 @@ shutdown:
 
     pop {r4-r11, pc}
 
-@ ====================== HELPER FUNCTIONS ======================
+@ ====================== Helpers ======================
 
 print_inventory:
     push {lr}
     ldr r0, =inventory_msg
     bl  printf
-
     ldr r0, =reg_label
     bl  printf
     ldr r0, =inv_reg
     ldr r1, [r0]
     bl  print_num
-
     ldr r0, =mid_label
     bl  printf
     ldr r0, =inv_mid
     ldr r1, [r0]
     bl  print_num
-
     ldr r0, =prem_label
     bl  printf
     ldr r0, =inv_prem
     ldr r1, [r0]
     bl  print_num
-
     pop {pc}
 
 print_dollars:
     push {lr}
     ldr r0, =dollars_msg
     bl  printf
-
     ldr r0, =reg_dol
     bl  printf
     ldr r0, =dol_reg
     ldr r1, [r0]
     bl  print_num
-
     ldr r0, =mid_dol
     bl  printf
     ldr r0, =dol_mid
     ldr r1, [r0]
     bl  print_num
-
     ldr r0, =prem_dol
     bl  printf
     ldr r0, =dol_prem
     ldr r1, [r0]
     bl  print_num
-
     pop {pc}
 
 print_num:
@@ -277,25 +262,25 @@ print_num:
     bl  printf
     pop {pc}
 
-calculate_tenths:                  @ r5=grade, r6=dollars → r0=tenths
-    cmp r5, #0                     @ Regular 4
+calculate_tenths:
+    cmp r5, #0
     moveq r0, r6, lsl #2
     bxeq lr
-    cmp r5, #1                     @ Mid 3
+    cmp r5, #1
     moveq r0, #3
     muleq r0, r6, r0
     bxeq lr
-    mov r0, r6, lsl #1             @ Premium 2
-    bx  lr
+    mov r0, r6, lsl #1
+    bx lr
 
-has_enough_for_grade:              @ r5=grade → r0=1 if >=10 else 0
+has_enough_for_grade:
     bl  get_inventory
     cmp r0, #10
     movge r0, #1
     movlt r0, #0
-    bx  lr
+    bx lr
 
-get_inventory:                     @ r5=grade → r0=inventory
+get_inventory:
     cmp r5, #0
     ldreq r0, =inv_reg
     ldreq r0, [r0]
@@ -305,47 +290,47 @@ get_inventory:                     @ r5=grade → r0=inventory
     cmp r5, #2
     ldreq r0, =inv_prem
     ldreq r0, [r0]
-    bx  lr
+    bx lr
 
-subtract_from_inventory:           @ r5=grade, r7=tenths
+subtract_from_inventory:
     cmp r5, #0
     ldreq r0, =inv_reg
-    beq sub_inv
+    beq do_sub
     cmp r5, #1
     ldreq r0, =inv_mid
-    beq sub_inv
+    beq do_sub
     ldr r0, =inv_prem
-sub_inv:
+do_sub:
     ldr r1, [r0]
     sub r1, r1, r7
     str r1, [r0]
-    bx  lr
+    bx lr
 
-add_to_dollars:                    @ r5=grade, r6=dollars
+add_to_dollars:
     cmp r5, #0
     ldreq r0, =dol_reg
-    beq add_dol
+    beq do_add
     cmp r5, #1
     ldreq r0, =dol_mid
-    beq add_dol
+    beq do_add
     ldr r0, =dol_prem
-add_dol:
+do_add:
     ldr r1, [r0]
     add r1, r1, r6
     str r1, [r0]
-    bx  lr
+    bx lr
 
-clear_input_buffer:                @ Clears leftover characters after bad scanf
+clear_input_buffer:
     push {r4, lr}
-    mov r4, #0
 clear_loop:
-    ldr r0, =char_format
-    ldr r1, =dollar_buf
+    ldr r0, =single_char
+    ldr r1, =char_buf
     bl  scanf
-    ldrb r2, [r1]
+    cmp r0, #1
+    bne clear_done
+    ldr r2, =char_buf
+    ldrb r2, [r2]
     cmp r2, #'\n'
-    beq clear_done
-    cmp r2, #0
     beq clear_done
     b   clear_loop
 clear_done:
