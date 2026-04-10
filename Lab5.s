@@ -1,21 +1,20 @@
 @ CS309 Lab 5 - Gasoline Pump Simulator
-@ Author: Aaron Davis
-@ Date: April 10, 2026
-@ Term: Spring 2026
+@ Author: Aaron
 @ Email: amd0047@uah.edu
-@ Purpose: Simulate a gasoline pump with three grades (R, M, P).
-@          Uses stack to preserve registers across calls/loops.
-@          Tracks inventory and dollars dispensed. Handles invalid input,
-@          insufficient inventory, and hidden status code.
+@ Date: April 2026
+@ Purpose: Simulate a gasoline pump with Regular, Mid-Grade, and Premium.
+@          Uses the stack to save/restore registers across loops and calls.
+@          Features: input validation, inventory tracking, insufficient fuel checks,
+@          hidden status code 'S', and automatic shutdown when all grades < 10 tenths.
 
-@ To assemble:   as -o Lab5.o Lab5.s
-@ To link:       gcc -o Lab5 Lab5.o
-@ To run:        ./Lab5
-@ To debug:      gdb ./Lab5
+@ Assemble:   as -o Lab5.o Lab5.s
+@ Link:       gcc -o Lab5 Lab5.o
+@ Run:        ./Lab5
+@ Debug:      gdb ./Lab5
 
 .section .data
 
-@ Output strings
+@ === Output Messages ===
 welcome:        .asciz "Welcome to gasoline pump.\n"
 inventory_msg:  .asciz "Current inventory of gasoline (in tenths of gallons) is:\n"
 reg_label:      .asciz "Regular     "
@@ -33,28 +32,27 @@ dollar_prompt:  .asciz "Enter Dollar amount to dispense (At least 1 and no more 
 invalid_grade:  .asciz "Invalid grade selection. Please enter R, M, or P.\n"
 invalid_dollar: .asciz "Invalid dollar amount. Must be integer between 1 and 50.\n"
 insufficient:   .asciz "Insufficient inventory for this request. Please enter a lower amount.\n"
-dispensed_tenths: .asciz " tenths of gallons have been dispensed.\n"
-insuf_grade:    .asciz "Insufficient inventory for this grade. Please select another.\n"
-final_inventory:.asciz "\nFinal inventory levels:\n"
-final_dollars:  .asciz "Final dollar amounts dispensed:\n"
+dispensed:      .asciz " tenths of gallons have been dispensed.\n"
+insuf_grade:    .asciz "Insufficient inventory for this grade. Please select another grade.\n"
+final_inv:      .asciz "\nFinal inventory levels:\n"
+final_dol:      .asciz "Final dollar amounts dispensed:\n"
 newline:        .asciz "\n"
-secret_code:    .asciz "SECRET"   @ Hidden code (case-sensitive, or adjust as needed)
 
-@ Input buffers and formats
-grade_input:    .space 10          @ Buffer for grade input
-dollar_input:   .space 20          @ Buffer for dollar amount
-int_format:     .asciz "%d"        @ For scanf integer
-char_format:    .asciz "%s"        @ For scanf string/grade
+@ === Input Buffers and Formats ===
+grade_buf:      .space 8           @ Buffer for grade input (S, R, M, P)
+dollar_buf:     .space 16          @ Buffer for dollar amount
+char_format:    .asciz "%s"        @ For reading grade as string
+int_format:     .asciz "%d"        @ For reading integer dollars
 
-@ Variables (all in tenths of gallons or cents)
+@ === Data Variables (all integers) ===
 .align 4
-inventory_reg:  .word 500
-inventory_mid:  .word 500
-inventory_prem: .word 500
+inv_reg:        .word 500
+inv_mid:        .word 500
+inv_prem:       .word 500
 
-dollars_reg:    .word 0
-dollars_mid:    .word 0
-dollars_prem:   .word 0
+dol_reg:        .word 0
+dol_mid:        .word 0
+dol_prem:       .word 0
 
 .section .text
 .global main
@@ -62,60 +60,56 @@ dollars_prem:   .word 0
 .extern scanf
 
 main:
-    push {r4-r11, lr}              @ Save registers on stack (required for complex program)
+    push {r4-r11, lr}              @ Save callee-saved registers + lr on stack
 
-    @ Display welcome and initial inventory
+    @ Display welcome and initial status
     ldr r0, =welcome
     bl  printf
 
-    bl  print_inventory
-    bl  print_dollars
+    bl  print_current_inventory
+    bl  print_current_dollars
 
-main_loop:
-    @ Check if all grades are below 10 tenths (1 gallon)
-    ldr r0, =inventory_reg
+main_loop:                         @ === Main program loop (clearly documented) ===
+    @ Check if all grades are below 10 tenths (1 gallon) - shutdown condition
+    ldr r0, =inv_reg
     ldr r1, [r0]
     cmp r1, #10
-    blt check_mid
-    b   get_grade
+    bge get_user_grade
 
-check_mid:
-    ldr r0, =inventory_mid
+    ldr r0, =inv_mid
     ldr r1, [r0]
     cmp r1, #10
-    blt check_prem
-    b   get_grade
+    bge get_user_grade
 
-check_prem:
-    ldr r0, =inventory_prem
+    ldr r0, =inv_prem
     ldr r1, [r0]
     cmp r1, #10
-    blt shutdown_pump               @ All grades insufficient -> end program
+    bge get_user_grade
 
-get_grade:
+    b   shutdown                   @ All grades insufficient → end program
+
+get_user_grade:
     ldr r0, =select_prompt
     bl  printf
 
-    @ Read grade (as string)
+    @ Read grade input
     ldr r0, =char_format
-    ldr r1, =grade_input
+    ldr r1, =grade_buf
     bl  scanf
 
-    @ Check for hidden secret code
-    ldr r0, =grade_input
-    ldr r1, =secret_code
-    bl  strcmp                      @ Assume strcmp available or implement simple compare
-    cmp r0, #0
+    @ === Hidden Secret Code Check (S or s) ===
+    ldr r0, =grade_buf
+    ldrb r1, [r0]                  @ Load first character entered
+    cmp r1, #'S'
+    beq show_status
+    cmp r1, #'s'
     beq show_status
 
-    @ Check single character input (R, M, P) - handle first char
-    ldr r0, =grade_input
-    ldrb r1, [r0]                   @ Load first byte
-
+    @ Check for valid grades (R/r, M/m, P/p)
     cmp r1, #'R'
-    beq select_regular
+    beq select_reg
     cmp r1, #'r'
-    beq select_regular
+    beq select_reg
 
     cmp r1, #'M'
     beq select_mid
@@ -123,246 +117,235 @@ get_grade:
     beq select_mid
 
     cmp r1, #'P'
-    beq select_premium
+    beq select_prem
     cmp r1, #'p'
-    beq select_premium
+    beq select_prem
 
-    @ Invalid grade
+    @ Invalid grade error handling
     ldr r0, =invalid_grade
     bl  printf
     b   main_loop
 
-select_regular:
+select_reg:
     ldr r0, =selected_reg
     bl  printf
-    mov r4, #0                      @ Grade flag: 0=reg, 1=mid, 2=prem
-    b   get_dollar_amount
+    mov r4, #0                     @ 0 = Regular
+    b   ask_dollar
 
 select_mid:
     ldr r0, =selected_mid
     bl  printf
-    mov r4, #1
-    b   get_dollar_amount
+    mov r4, #1                     @ 1 = Mid-Grade
+    b   ask_dollar
 
-select_premium:
+select_prem:
     ldr r0, =selected_prem
     bl  printf
-    mov r4, #2
-    b   get_dollar_amount
+    mov r4, #2                     @ 2 = Premium
+    b   ask_dollar
 
-get_dollar_amount:
-    @ Check if this grade has enough inventory (>=10)
-    mov r5, r4                      @ Save grade
-    bl  check_inventory_for_grade
+ask_dollar:                        @ === Dollar amount input loop ===
+    @ First check if this grade has enough inventory (>=10)
+    mov r5, r4                     @ r5 = current grade
+    bl  has_enough_inventory
     cmp r0, #0
-    beq grade_insufficient
+    beq grade_insufficient_error
 
     ldr r0, =dollar_prompt
     bl  printf
 
     ldr r0, =int_format
-    ldr r1, =dollar_input          @ Reuse buffer for int (scanf will parse)
+    ldr r1, =dollar_buf
     bl  scanf
 
-    @ Validate input (scanf returns 1 on success)
-    cmp r0, #1
-    bne invalid_dollar_input
+    cmp r0, #1                     @ scanf success?
+    bne invalid_dollar_error
 
-    ldr r0, =dollar_input
-    ldr r6, [r0]                   @ Dollar amount in r6
+    ldr r6, =dollar_buf            @ r6 = dollar amount entered
+    ldr r6, [r6]
 
     cmp r6, #1
-    blt invalid_dollar_input
+    blt invalid_dollar_error
     cmp r6, #50
-    bgt invalid_dollar_input
+    bgt invalid_dollar_error
 
-    @ Calculate tenths of gallons to dispense
-    bl  calculate_tenths           @ r0 = tenths based on grade in r5 and dollars in r6
+    @ Calculate tenths to dispense based on grade
+    bl  calc_tenths                @ Returns tenths in r0
+    mov r7, r0                     @ r7 = requested tenths
 
-    @ Check if enough inventory
-    mov r7, r0                     @ Save requested tenths
-    bl  get_inventory_for_grade    @ r0 = current inventory for this grade
+    @ Check sufficient inventory for this request
+    bl  get_current_inventory      @ r0 = current inventory for grade
     cmp r0, r7
-    blt insufficient_fuel
+    blt insufficient_fuel_error
 
-    @ Dispense: subtract from inventory and add to dollars
-    bl  update_inventory
-    bl  update_dollars
+    @ === Dispense fuel ===
+    bl  subtract_inventory         @ Update inventory
+    bl  add_dollars                @ Update dollars dispensed
 
-    @ Display dispensed amount
-    ldr r0, =dollar_input          @ Reuse to print number
-    str r7, [r0]
+    @ Display result
+    mov r1, r7
     ldr r0, =int_format
-    ldr r1, =dollar_input
     bl  printf
-    ldr r0, =dispensed_tenths
+    ldr r0, =dispensed
     bl  printf
 
     b   main_loop
 
-invalid_dollar_input:
+invalid_dollar_error:
     ldr r0, =invalid_dollar
     bl  printf
-    b   get_dollar_amount          @ Retry same grade
+    b   ask_dollar                 @ Retry dollar amount for same grade
 
-insufficient_fuel:
+insufficient_fuel_error:
     ldr r0, =insufficient
     bl  printf
-    b   get_dollar_amount          @ Prompt for lower amount
+    b   ask_dollar                 @ Prompt for lower amount
 
-grade_insufficient:
+grade_insufficient_error:
     ldr r0, =insuf_grade
     bl  printf
     b   main_loop
 
-show_status:
-    bl  print_inventory
-    bl  print_dollars
+show_status:                       @ === Hidden code handler ===
+    bl  print_current_inventory
+    bl  print_current_dollars
     b   main_loop
 
-shutdown_pump:
-    ldr r0, =final_inventory
+shutdown:                          @ === Final shutdown ===
+    ldr r0, =final_inv
     bl  printf
-    bl  print_inventory
+    bl  print_current_inventory
 
-    ldr r0, =final_dollars
+    ldr r0, =final_dol
     bl  printf
-    bl  print_dollars
+    bl  print_current_dollars
 
     ldr r0, =newline
     bl  printf
 
     pop {r4-r11, pc}               @ Restore registers and return to OS
 
-@ Helper subroutines
+@ ====================== Helper Subroutines ======================
 
-print_inventory:
+print_current_inventory:
     push {lr}
     ldr r0, =inventory_msg
     bl  printf
 
     ldr r0, =reg_label
     bl  printf
-    ldr r0, =inventory_reg
+    ldr r0, =inv_reg
     ldr r1, [r0]
-    bl  print_int
+    bl  print_number
 
     ldr r0, =mid_label
     bl  printf
-    ldr r0, =inventory_mid
+    ldr r0, =inv_mid
     ldr r1, [r0]
-    bl  print_int
+    bl  print_number
 
     ldr r0, =prem_label
     bl  printf
-    ldr r0, =inventory_prem
+    ldr r0, =inv_prem
     ldr r1, [r0]
-    bl  print_int
+    bl  print_number
 
     pop {pc}
 
-print_dollars:
+print_current_dollars:
     push {lr}
     ldr r0, =dollars_msg
     bl  printf
 
     ldr r0, =reg_dol
     bl  printf
-    ldr r0, =dollars_reg
+    ldr r0, =dol_reg
     ldr r1, [r0]
-    bl  print_int
+    bl  print_number
 
     ldr r0, =mid_dol
     bl  printf
-    ldr r0, =dollars_mid
+    ldr r0, =dol_mid
     ldr r1, [r0]
-    bl  print_int
+    bl  print_number
 
     ldr r0, =prem_dol
     bl  printf
-    ldr r0, =dollars_prem
+    ldr r0, =dol_prem
     ldr r1, [r0]
-    bl  print_int
+    bl  print_number
 
     pop {pc}
 
-print_int:
-    push {r4, lr}
-    mov r4, r1
+print_number:                      @ Simple helper to print integer + newline
+    push {lr}
     ldr r0, =int_format
-    mov r1, r4
     bl  printf
     ldr r0, =newline
     bl  printf
-    pop {r4, pc}
-
-@ calculate_tenths: r5=grade (0,1,2), r6=dollars -> r0=tenths
-calculate_tenths:
-    push {lr}
-    cmp r5, #0
-    beq reg_tenths
-    cmp r5, #1
-    beq mid_tenths
-    @ premium
-    mov r0, r6, lsl #1             @ 2 tenths per dollar
-    pop {pc}
-reg_tenths:
-    mov r0, r6, lsl #2             @ 4 tenths per dollar
-    pop {pc}
-mid_tenths:
-    mov r0, r6                     @ 3? Wait, table says 3 for mid-grade
-    mov r1, #3
-    mul r0, r6, r1
     pop {pc}
 
-@ check_inventory_for_grade: r5=grade -> r0=1 if >=10, else 0
-check_inventory_for_grade:
+@ calc_tenths: r5=grade, r6=dollars → r0=tenths
+calc_tenths:
     push {lr}
-    bl  get_inventory_for_grade
+    cmp r5, #0                     @ Regular: 4 tenths per dollar
+    moveq r0, r6, lsl #2
+    beq calc_done
+    cmp r5, #1                     @ Mid-Grade: 3 tenths per dollar
+    moveq r0, #3
+    muleq r0, r0, r6
+    beq calc_done
+    mov r0, r6, lsl #1             @ Premium: 2 tenths per dollar
+calc_done:
+    pop {pc}
+
+has_enough_inventory:              @ r5=grade → r0=1 if >=10, else 0
+    push {lr}
+    bl  get_current_inventory
     cmp r0, #10
     movge r0, #1
     movlt r0, #0
     pop {pc}
 
-get_inventory_for_grade:
+get_current_inventory:             @ r5=grade → r0=current inventory
     cmp r5, #0
-    ldreq r0, =inventory_reg
+    ldreq r0, =inv_reg
     ldreq r0, [r0]
     cmp r5, #1
-    ldreq r0, =inventory_mid
+    ldreq r0, =inv_mid
     ldreq r0, [r0]
     cmp r5, #2
-    ldreq r0, =inventory_prem
+    ldreq r0, =inv_prem
     ldreq r0, [r0]
     bx  lr
 
-update_inventory:
+subtract_inventory:                @ r5=grade, r7=tenths to subtract
     push {lr}
     cmp r5, #0
-    ldreq r0, =inventory_reg
-    beq sub_inv
+    ldreq r0, =inv_reg
+    beq do_subtract
     cmp r5, #1
-    ldreq r0, =inventory_mid
-    beq sub_inv
-    ldr r0, =inventory_prem
-sub_inv:
+    ldreq r0, =inv_mid
+    beq do_subtract
+    ldr r0, =inv_prem
+do_subtract:
     ldr r1, [r0]
-    sub r1, r1, r7                 @ r7 = requested tenths
+    sub r1, r1, r7
     str r1, [r0]
     pop {pc}
 
-update_dollars:
+add_dollars:                       @ r5=grade, r6=dollars to add
     push {lr}
     cmp r5, #0
-    ldreq r0, =dollars_reg
-    beq add_dol
+    ldreq r0, =dol_reg
+    beq do_add
     cmp r5, #1
-    ldreq r0, =dollars_mid
-    beq add_dol
-    ldr r0, =dollars_prem
-add_dol:
+    ldreq r0, =dol_mid
+    beq do_add
+    ldr r0, =dol_prem
+do_add:
     ldr r1, [r0]
-    add r1, r1, r6                 @ r6 = dollars
+    add r1, r1, r6
     str r1, [r0]
     pop {pc}
 
