@@ -1,7 +1,8 @@
 @ CS309 Lab 5 - Gasoline Pump Simulator
-@ Author: [Your Name]
-@ Date: [Today's Date]
-@ Term: [Your Term]
+@ Author: Aaron Davis
+@ Date: April 10, 2026
+@ Term: Spring 2026
+@ Email: amd0047@uah.edu
 @ Purpose: Simulate a gasoline pump with three grades (R, M, P).
 @          Uses stack to preserve registers across calls/loops.
 @          Tracks inventory and dollars dispensed. Handles invalid input,
@@ -233,7 +234,7 @@ shutdown_pump:
 
     pop {r4-r11, pc}               @ Restore registers and return to OS
 
-@ Helper subroutines (use stack for preservation)
+@ Helper subroutines
 
 print_inventory:
     push {lr}
@@ -285,7 +286,7 @@ print_dollars:
 
     pop {pc}
 
-print_int:                             @ Simple integer print helper
+print_int:
     push {r4, lr}
     mov r4, r1
     ldr r0, =int_format
@@ -364,9 +365,5 @@ add_dol:
     add r1, r1, r6                 @ r6 = dollars
     str r1, [r0]
     pop {pc}
-
-@ Note: You will need to implement or link strcmp if not using libc fully.
-@ For simplicity, you can compare the first character for the secret code as well,
-@ or hardcode a single-char secret if your instructor allows.
 
 @ End of program
