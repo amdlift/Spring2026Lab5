@@ -224,19 +224,19 @@ print_inventory:
     ldr r0, =inventory_msg
     bl  printf
 
-    ldr r0, =reg_label   ; Regular
+    ldr r0, =reg_label
     bl  printf
     ldr r0, =inv_reg
     ldr r1, [r0]
     bl  print_num
 
-    ldr r0, =mid_label   ; Mid-Grade
+    ldr r0, =mid_label
     bl  printf
     ldr r0, =inv_mid
     ldr r1, [r0]
     bl  print_num
 
-    ldr r0, =prem_label  ; Premium
+    ldr r0, =prem_label
     bl  printf
     ldr r0, =inv_prem
     ldr r1, [r0]
